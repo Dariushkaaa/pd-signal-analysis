@@ -177,10 +177,18 @@ async def recalculate_with_new_points(points_data: PointsUpdate):
 
 
 # ==================== ЗАПУСК СЕРВЕРА ====================
+# ==================== ЗАПУСК СЕРВЕРА ====================
 if __name__ == "__main__":
+    import os
     import uvicorn
+    
+    # Читаем порт из переменной окружения PORT, которую дает Railway. 
+    # Если её нет (локальный запуск), используем 8000 по умолчанию.
+    port = int(os.environ.get("PORT", 8000))
+    
     print("=" * 50)
     print("Запуск сервера PD Signal Analysis")
-    print("Откройте в браузере: http://localhost:8000")
+    print(f"Слушаю порт: {port}")
     print("=" * 50)
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    
+    uvicorn.run(app, host="0.0.0.0", port=port)
