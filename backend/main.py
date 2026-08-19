@@ -183,4 +183,4 @@ if __name__ == "__main__":
     print("Запуск сервера PD Signal Analysis")
     print("Откройте в браузере: http://localhost:8000")
     print("=" * 50)
-    uvicorn.run(app, host="0.0.0.0", port=8080)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
