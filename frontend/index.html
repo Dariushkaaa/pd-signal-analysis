@@ -5,10 +5,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PD Signal Analysis</title>
-  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Plotly.js для графиков -->
   <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+  <link rel="icon" href="data:,">
   <style>
     .drag-active {
       border-color: #3b82f6;
@@ -40,20 +39,16 @@
 
 <body class="bg-gray-50 text-gray-800 font-sans min-h-screen">
 
-  <div class="max-w-5xl mx-auto p-6">
-    <!-- Заголовок -->
+  <div class="max-w-6xl mx-auto p-6">
     <header class="mb-8 text-center">
       <h1 class="text-3xl font-bold text-blue-700 mb-2">🧠 Анализ сигналов для классификации болезни Паркинсона</h1>
       <p class="text-gray-600">Загрузите данные акселерометра и гироскопа для автоматического анализа</p>
     </header>
 
-    <!-- Статус моделей -->
     <div id="status-box" class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-6 rounded shadow-sm">
       <p class="font-bold">⏳ Загрузка моделей...</p>
-      <p class="text-sm">Пожалуйста, подождите, пока сервер инициализирует нейросети.</p>
     </div>
 
-    <!-- Зона загрузки файлов -->
     <div class="bg-white p-6 rounded-lg shadow-md mb-6">
       <h2 class="text-xl font-semibold mb-4">1. Загрузка данных</h2>
       <div id="drop-zone"
@@ -72,7 +67,6 @@
       </div>
     </div>
 
-    <!-- Кнопка запуска -->
     <div class="text-center mb-8">
       <button id="run-btn" disabled
         class="bg-gray-400 text-white font-bold py-3 px-8 rounded-lg shadow cursor-not-allowed transition-all duration-300">
@@ -82,29 +76,33 @@
         выбраны 2 файла</p>
     </div>
 
-    <!-- Индикатор загрузки -->
     <div id="loading" class="hidden text-center py-8">
       <div class="loader mb-3"></div>
-      <p class="text-blue-600 font-semibold">Обработка данных нейросетями... Это может занять 10-20 секунд.</p>
+      <p class="text-blue-600 font-semibold">⏳ Обработка данных нейросетями... На сервере это может занять 1-3 минуты.
+        Пожалуйста, не закрывайте вкладку.</p>
     </div>
 
-    <!-- Результаты -->
     <div id="results" class="hidden space-y-6">
-      <!-- Диагноз -->
       <div id="diagnosis-box" class="p-6 rounded-lg shadow-md text-center">
         <h3 class="text-2xl font-bold mb-2" id="diagnosis-title"></h3>
         <p class="text-lg" id="diagnosis-prob"></p>
       </div>
 
-      <!-- График -->
       <div class="bg-white p-4 rounded-lg shadow-md">
-        <h3 class="text-lg font-semibold mb-3 text-gray-700">📈 Визуализация сигнала и выделенных сегментов</h3>
+        <div class="flex justify-between items-center mb-3">
+          <h3 class="text-lg font-semibold text-gray-700">📈 Визуализация сигнала</h3>
+          <button id="recalc-btn"
+            class="hidden bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded shadow transition flex items-center gap-2">
+            🔄 Пересчитать по новым точкам
+          </button>
+        </div>
+        <p class="text-xs text-gray-500 mb-2">💡 Вы можете перетаскивать вертикальные линии (T1-T5) мышкой, чтобы
+          скорректировать границы сегментов.</p>
         <div id="plotly-chart" class="w-full h-96"></div>
       </div>
 
-      <!-- Таблица признаков -->
       <div class="bg-white p-4 rounded-lg shadow-md overflow-x-auto">
-        <h3 class="text-lg font-semibold mb-3 text-gray-700">📋 Анализ ключевых признаков</h3>
+        <h3 class="text-lg font-semibold mb-3 text-gray-700">📋 Анализ всех извлеченных признаков</h3>
         <table class="min-w-full divide-y divide-gray-200 text-sm">
           <thead class="bg-gray-50">
             <tr>
@@ -114,22 +112,17 @@
               <th class="px-4 py-3 text-left font-medium text-gray-500 uppercase">Статус</th>
             </tr>
           </thead>
-          <tbody id="features-table-body" class="bg-white divide-y divide-gray-200">
-            <!-- Заполняется через JS -->
-          </tbody>
+          <tbody id="features-table-body" class="bg-white divide-y divide-gray-200"></tbody>
         </table>
       </div>
     </div>
   </div>
 
   <script>
-    // 🔑 ГЛАВНОЕ ИСПРАВЛЕНИЕ: Динамический базовый URL
-    // Если открыто на Railway, будет 'https://...up.railway.app'
-    // Если локально, будет 'http://localhost:8000'
     const API_BASE = window.location.origin;
-
     let isModelsReady = false;
     let selectedFiles = [];
+    let currentPoints = {}; // Хранит текущие значения T1-T5 для пересчета
 
     const statusBox = document.getElementById('status-box');
     const runBtn = document.getElementById('run-btn');
@@ -140,50 +133,41 @@
     const dropZone = document.getElementById('drop-zone');
     const loading = document.getElementById('loading');
     const results = document.getElementById('results');
+    const recalcBtn = document.getElementById('recalc-btn');
 
-    // 1. Проверка статуса моделей
     async function checkModels() {
       try {
         const response = await fetch(`${API_BASE}/api/models-status`);
         const data = await response.json();
-
         if (data.ready) {
           isModelsReady = true;
           statusBox.className = "bg-green-100 border-l-4 border-green-500 text-green-700 p-4 mb-6 rounded shadow-sm";
           statusBox.innerHTML = `<p class="font-bold">✅ Модели успешно загружены и готовы к работе!</p>`;
           updateButtonState();
         } else {
-          setTimeout(checkModels, 2000); // Повторить через 2 секунды
+          setTimeout(checkModels, 2000);
         }
       } catch (error) {
-        console.error("Ошибка проверки моделей:", error);
         setTimeout(checkModels, 3000);
       }
     }
     checkModels();
 
-    // 2. Обработка файлов
     fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
-
     dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-active'); });
     dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-active'));
     dropZone.addEventListener('drop', (e) => {
-      e.preventDefault();
-      dropZone.classList.remove('drag-active');
-      handleFiles(e.dataTransfer.files);
+      e.preventDefault(); dropZone.classList.remove('drag-active'); handleFiles(e.dataTransfer.files);
     });
 
     function handleFiles(files) {
       selectedFiles = Array.from(files).filter(f => f.name.endsWith('.csv'));
-
       if (selectedFiles.length === 2) {
         fileList.classList.remove('hidden');
-        fileNames.innerHTML = selectedFiles.map(f => `<li>${f.name} (${(f.size / 1024).toFixed(1)} KB)</li>`).join('');
+        fileNames.innerHTML = selectedFiles.map(f => `<li>${f.name} (${(f.size / 1024 / 1024).toFixed(2)} MB)</li>`).join('');
         updateButtonState();
       } else {
-        fileList.classList.add('hidden');
-        selectedFiles = [];
-        updateButtonState();
+        fileList.classList.add('hidden'); selectedFiles = []; updateButtonState();
         alert("Пожалуйста, выберите ровно 2 CSV файла.");
       }
     }
@@ -199,7 +183,6 @@
         runBtn.disabled = true;
         runBtn.classList.add('bg-gray-400', 'cursor-not-allowed');
         runBtn.classList.remove('bg-blue-600', 'hover:bg-blue-700', 'cursor-pointer');
-
         let reasons = [];
         if (!isModelsReady) reasons.push("модели загружаются");
         if (selectedFiles.length !== 2) reasons.push(`выбрано файлов: ${selectedFiles.length}/2`);
@@ -208,44 +191,127 @@
       }
     }
 
-    // 3. Запуск анализа
     runBtn.addEventListener('click', async () => {
       loading.classList.remove('hidden');
       results.classList.add('hidden');
       runBtn.disabled = true;
+      recalcBtn.classList.add('hidden');
 
       const formData = new FormData();
       formData.append('acc_file', selectedFiles[0]);
       formData.append('gyro_file', selectedFiles[1]);
 
       try {
-        const response = await fetch(`${API_BASE}/api/process-signal`, {
-          method: 'POST',
-          body: formData
-        });
-
-        if (!response.ok) {
-          const errData = await response.json();
-          throw new Error(errData.detail || "Ошибка сервера");
-        }
-
+        const response = await fetch(`${API_BASE}/api/process-signal`, { method: 'POST', body: formData });
+        if (!response.ok) throw new Error((await response.json()).detail || "Ошибка сервера");
         const data = await response.json();
         displayResults(data);
-
       } catch (error) {
         alert("Ошибка при анализе: " + error.message);
-        console.error(error);
       } finally {
         loading.classList.add('hidden');
-        updateButtonState(); // Вернуть кнопку в активное состояние
+        updateButtonState();
       }
     });
 
-    // 4. Отображение результатов
+    // Обработчик перетаскивания линий на графике
+    document.getElementById('plotly-chart').on('plotly_relayout', function (eventdata) {
+      // Plotly возвращает изменения в виде 'shapes[0].x0', 'shapes[1].x0' и т.д.
+      const shapeKeys = ['T1', 'T2', 'T3', 'T4', 'T5'];
+      let changed = false;
+
+      for (let i = 0; i < 5; i++) {
+        const key = `shapes[${i}].x0`;
+        if (eventdata[key] !== undefined) {
+          currentPoints[shapeKeys[i]] = parseFloat(eventdata[key]);
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        recalcBtn.classList.remove('hidden');
+        recalcBtn.classList.add('animate-pulse'); // Подсветка кнопки
+      }
+    });
+
+    recalcBtn.addEventListener('click', async () => {
+      recalcBtn.disabled = true;
+      recalcBtn.innerHTML = '⏳ Пересчет...';
+
+      try {
+        const response = await fetch(`${API_BASE}/api/recalculate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ points: currentPoints })
+        });
+
+        if (!response.ok) throw new Error((await response.json()).detail || "Ошибка пересчета");
+        const data = await response.json();
+
+        // Обновляем только результаты, не перерисовывая весь график заново (чтобы не сбить позиции линий)
+        updateDiagnosis(data);
+        updateFeatureTable(data.feature_norm);
+
+        recalcBtn.classList.remove('animate-pulse');
+        alert("✅ Результаты успешно пересчитаны по новым границам!");
+      } catch (error) {
+        alert("Ошибка при пересчете: " + error.message);
+      } finally {
+        recalcBtn.disabled = false;
+        recalcBtn.innerHTML = '🔄 Пересчитать по новым точкам';
+      }
+    });
+
     function displayResults(data) {
       results.classList.remove('hidden');
+      currentPoints = { ...data.points }; // Сохраняем исходные точки
+      recalcBtn.classList.add('hidden');
 
-      // Диагноз
+      updateDiagnosis(data);
+
+      // Рисуем график с перетаскиваемыми линиями
+      const time = data.full_signal.time;
+      const mag = data.full_signal.magnitude;
+
+      const traceSignal = { x: time, y: mag, mode: 'lines', name: 'Acceleration Magnitude', line: { color: '#74b9ff', width: 1 } };
+
+      const shapes = [];
+      const annotations = [];
+      const colors = { T1: 'green', T2: 'orange', T3: 'blue', T4: 'orange', T5: 'red' };
+      const pointNames = ['T1', 'T2', 'T3', 'T4', 'T5'];
+
+      pointNames.forEach((name, index) => {
+        const val = data.points[name];
+        if (val !== null) {
+          shapes.push({
+            type: 'line', x0: val, x1: val, y0: 0, y1: 1, yref: 'paper',
+            line: { color: colors[name], width: 3, dash: 'dash' },
+            editable: true, // ДЕЛАЕМ ЛИНИЮ ПЕРЕТАСКИВАЕМОЙ
+            name: name
+          });
+          annotations.push({
+            x: val, y: 1.05, yref: 'paper', text: name, showarrow: false,
+            font: { color: colors[name], size: 14, weight: 'bold' }
+          });
+        }
+      });
+
+      const layout = {
+        title: 'Анализ сигнала (перетаскивайте вертикальные линии)',
+        xaxis: { title: 'Время (сек)' },
+        yaxis: { title: 'Magnitude' },
+        shapes: shapes,
+        annotations: annotations,
+        margin: { t: 50, r: 20, l: 50, b: 50 },
+        dragmode: 'pan' // Позволяет двигать график, но линии остаются редактируемыми
+      };
+
+      Plotly.newPlot('plotly-chart', [traceSignal], layout, { responsive: true, displayModeBar: false });
+      updateFeatureTable(data.feature_norm);
+      results.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function updateDiagnosis(data) {
       const isPD = data.prediction === 1;
       const diagBox = document.getElementById('diagnosis-box');
       if (isPD) {
@@ -258,64 +324,30 @@
         document.getElementById('diagnosis-title').className = "text-2xl font-bold mb-2 text-green-700";
       }
       document.getElementById('diagnosis-prob').textContent = `Уверенность модели: ${(data.probability * 100).toFixed(1)}%`;
+    }
 
-      // График Plotly
-      const time = data.full_signal.time;
-      const mag = data.full_signal.magnitude;
-
-      const traceSignal = {
-        x: time, y: mag, mode: 'lines', name: 'Acceleration Magnitude',
-        line: { color: '#74b9ff', width: 1 }
-      };
-
-      const shapes = [];
-      const annotations = [];
-      const colors = { T1: 'green', T2: 'orange', T3: 'blue', T4: 'orange', T5: 'red' };
-
-      // Добавляем вертикальные линии для T1-T5
-      for (const [key, val] of Object.entries(data.points)) {
-        if (val !== null) {
-          shapes.push({
-            type: 'line', x0: val, x1: val, y0: 0, y1: 1, yref: 'paper',
-            line: { color: colors[key], width: 2, dash: 'dash' }
-          });
-          annotations.push({
-            x: val, y: 1.05, yref: 'paper', text: key, showarrow: false,
-            font: { color: colors[key], size: 12, weight: 'bold' }
-          });
-        }
-      }
-
-      const layout = {
-        title: 'Анализ сигнала',
-        xaxis: { title: 'Время (сек)' },
-        yaxis: { title: 'Magnitude' },
-        shapes: shapes,
-        annotations: annotations,
-        margin: { t: 40, r: 20, l: 50, b: 40 }
-      };
-
-      Plotly.newPlot('plotly-chart', [traceSignal], layout, { responsive: true });
-
-      // Таблица признаков
+    function updateFeatureTable(featureNormData) {
       const tbody = document.getElementById('features-table-body');
       tbody.innerHTML = '';
 
-      for (const [feature, info] of Object.entries(data.feature_norm)) {
+      for (const [feature, info] of Object.entries(featureNormData)) {
         const tr = document.createElement('tr');
-        const statusColor = info.in_norm === true ? 'text-green-600 font-semibold' : (info.in_norm === false ? 'text-red-600 font-semibold' : 'text-gray-500');
+        let statusColor = 'text-gray-500';
+        if (info.in_norm === true) statusColor = 'text-green-600 font-semibold';
+        if (info.in_norm === false) statusColor = 'text-red-600 font-semibold';
+
+        const normText = (info.lower_bound !== undefined && info.upper_bound !== undefined)
+          ? `${info.lower_bound} – ${info.upper_bound}`
+          : 'Не задано';
 
         tr.innerHTML = `
-                    <td class="px-4 py-3 whitespace-nowrap text-gray-900">${feature}</td>
-                    <td class="px-4 py-3 whitespace-nowrap text-gray-700">${info.value !== null ? info.value.toFixed(3) : 'N/A'}</td>
-                    <td class="px-4 py-3 whitespace-nowrap text-gray-500">${info.lower_bound !== undefined ? `${info.lower_bound} – ${info.upper_bound}` : 'Не задано'}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-gray-900 font-medium">${feature}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-gray-700">${info.value !== null ? info.value.toFixed(4) : 'N/A'}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-gray-500">${normText}</td>
                     <td class="px-4 py-3 whitespace-nowrap ${statusColor}">${info.message}</td>
                 `;
         tbody.appendChild(tr);
       }
-
-      // Прокрутка к результатам
-      results.scrollIntoView({ behavior: 'smooth' });
     }
   </script>
 </body>
